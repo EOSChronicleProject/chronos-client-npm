@@ -1,7 +1,49 @@
-import {ABI, Serializer}  from '@greymass/eosio';
+import {ABI, Serializer, ABISerializableObject, ABISerializableConstructor}  from '@greymass/eosio';
 
 import cassandra from 'cassandra-driver';
 import shipABIJSON from '../state_history_plugin_abi.json' assert {type: 'json'};
+
+
+
+
+class StupidVariant implements ABISerializableObject {
+    static abiName = '____stupid';
+    obj: {};
+
+    constructor(value: {}) {
+        this.obj = value;
+    }
+
+    static from(value: [string, {}]): TransactionTrace {
+        return new this(value[1]);
+    }
+
+    toJSON() {
+        return this.obj;
+    }
+
+    equals(other: StupidVariant) : boolean {
+        return true;
+    }
+};
+
+
+class ActionReceipt extends StupidVariant {
+    static abiName = 'action_receipt';
+};
+
+class ActionTrace extends StupidVariant {
+    static abiName = 'action_trace';
+};
+
+class PartialTransaction extends StupidVariant {
+    static abiName = 'partial_transaction';
+};
+
+class TransactionTrace extends StupidVariant {
+    static abiName = 'transaction_trace';
+};
+
 
 export class ChronosClient {
     client: cassandra.Client;
@@ -36,7 +78,15 @@ export class ChronosClient {
 
 
     parseTraceBlob(blob: Buffer): Object {
-        let trace = Serializer.decode({abi: this.shipABI, data: blob, type: 'transaction_trace'});
+        let trace = Serializer.decode({abi: this.shipABI, data: blob, type: 'transaction_trace',
+                                       customTypes:
+                                       [
+                                           ActionReceipt,
+                                           ActionTrace,
+                                           PartialTransaction,
+                                           TransactionTrace,
+                                       ]
+                                      });
         return trace;
     }
 
