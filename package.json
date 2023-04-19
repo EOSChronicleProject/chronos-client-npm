@@ -1,0 +1,29 @@
+{
+  "name": "chronos_client",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "npm": ">=8.0.0",
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "files": [
+    "src/**",
+    "lib/*"
+  ],
+  "dependencies": {
+    "@greymass/eosio": "^0.6.10",
+    "cassandra-driver": "^4.6.4",
+    "commander": "^10.0.1",
+    "typescript": "^5.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.18"
+  }
+}
