@@ -1,8 +1,9 @@
 import {ABI, Serializer, ABISerializableObject, ABIDecoder}  from '@greymass/eosio';
 
 import cassandra from 'cassandra-driver';
-import shipABIJSON from '../state_history_plugin_abi.json' assert {type: 'json'};
+import Long from 'long';
 
+import shipABIJSON from '../state_history_plugin_abi.json' assert {type: 'json'};
 
 
 
@@ -60,6 +61,7 @@ export class TransactionDetails {
 export class ChronosClient {
     client: cassandra.Client;
     shipABI: ABI;
+    abi_cache: Map<string, ABI> = new Map<string, ABI>();
 
     constructor(options: cassandra.ClientOptions) {
         this.client = new cassandra.Client(options);
@@ -106,23 +108,31 @@ export class ChronosClient {
         });
 
         let promises = new Array();
-        let contract_abis = new Map<string, ABI>();
 
-        for( let contract of contracts ) {
-            promises.push(
-                this.getABI(contract, block_num).then((abi) => {
-                    contract_abis.set(contract, abi);
-                })
-            );
+        for( const contract of contracts ) {
+            if( !this.abi_cache.has(contract) ) {
+                promises.push(
+                    this.getABI(contract, block_num)
+                        .then((abi) => {
+                            this.abi_cache.set(contract, abi);
+                        }));
+            }
         }
 
         await Promise.all(promises);
 
         trace['obj']['action_traces'].forEach((action) => {
             const act = action['obj']['act'];
-            const decoded_data = Serializer.decode({abi: contract_abis.get(act.account.toString()),
-                                                    data: act.data,
-                                                    type: act.name.toString()});
+            let decoded_data;
+            try {
+                decoded_data = Serializer.decode({abi: this.abi_cache.get(act.account.toString()),
+                                                  data: act.data,
+                                                  type: act.name.toString()});
+            }
+            catch(err) {
+                console.error(err);
+            }
+
             if( decoded_data ) {
                 act.data = decoded_data;
             }
@@ -143,7 +153,7 @@ export class ChronosClient {
                         resolve(ABI.fromABI(decoder));
                     }
                     else {
-                        resolve(ABI.from(''));
+                        resolve(new ABI({}));
                     }
                 });
         });
@@ -172,6 +182,80 @@ export class ChronosClient {
         });
     }
 
+
+    async getTracesBySeq(seqs: Array<Long>): Promise<Array<TransactionDetails>> {
+        let traces: Map<Long, TransactionDetails> = new Map<Long, TransactionDetails>();
+
+        while( seqs.length > 0 ) {
+            let batch: Array<Long> = seqs.splice(0, 100);
+            let promises = new Array();
+            for( const seq of batch ) {
+                promises.push(
+                    this.client.execute('SELECT block_num, block_time, trace FROM transactions where seq = ?',
+                                        [ seq ],
+                                        { prepare : true })
+                        .then((result) => {
+                            if( result.rows.length > 0 ) {
+                                const row = result.rows[0];
+                                return this.parseTraceBlob(row.block_num, row.block_time, row.trace)
+                                    .then((trdet) => {
+                                        traces.set(seq, trdet);
+                                    })
+                                    .catch((err) => { return Promise.reject(err) });
+                            }
+                            else {
+                                return Promise.reject(new Error('Transaction not found for seq=' + seq));
+                            }
+                        }));
+            }
+
+            await Promise.all(promises);
+        }
+
+        let ret: Array<TransactionDetails> = new Array<TransactionDetails>();
+
+        [...traces.entries()].sort((a, b) => a[0].compare(b[0])).forEach((entry) => {
+            ret.push(entry[1]);
+        });
+
+        return ret;
+    }
+
+    async getLastTracesByAccount(account: string, maxcount: number): Promise<Array<TransactionDetails>> {
+        let seqs: Array<Long> = new Array<Long>();
+        let finished = false;
+        let curr_block_date = Long.MAX_VALUE;
+        while( seqs.length < maxcount && !finished ) {
+            const dates_result =
+                  await this.client.execute('SELECT block_date FROM receipt_dates WHERE account_name = ? and block_date < ? ' +
+                                            ' ORDER BY block_date DESC LIMIT 10',
+                                            [ account, curr_block_date ],
+                                            { prepare : true });
+            if( dates_result.rowLength == 0 ) {
+                finished = true;
+            }
+            else {
+                for( const dates_row of dates_result.rows ) {
+                    curr_block_date = dates_row.block_date;
+
+                    const seqs_result =
+                          await this.client.execute('SELECT seq FROM account_receipts WHERE account_name = ? and block_date = ? ' +
+                                                    'ORDER BY recv_sequence_start DESC LIMIT ?',
+                                                    [ account, curr_block_date, maxcount - seqs.length ],
+                                                    { prepare : true });
+                    for await (const seqs_row of seqs_result) {
+                        seqs.push(seqs_row.seq);
+                    }
+
+                    if( seqs.length >= maxcount ) {
+                        finished = true;
+                        break;
+                    }
+                }
+            }
+        }
+        return this.getTracesBySeq(seqs);
+    }
 }
 
 

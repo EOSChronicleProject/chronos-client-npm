@@ -14,12 +14,27 @@ program
 
 program
     .command('trxid')
-    .requiredOption('--id [value]', 'tranmsaction ID')
+    .requiredOption('--id [value]', 'transaction ID')
     .description('retrieve a transaction by ID')
     .action(async (cmdopts) => {
 
         const client = get_client();
         client.getTraceByTrxID(cmdopts.id).then((result) => {
+            console.log(JSON.stringify(result));
+            process.exit(0);
+        });
+    });
+
+
+program
+    .command('acc')
+    .requiredOption('--account [value]', 'Account name')
+    .requiredOption('--maxrows [number]', 'Maximum rows', '100')
+    .description('retrieve latest transactions by account name')
+    .action(async (cmdopts) => {
+
+        const client = get_client();
+        client.getLastTracesByAccount(cmdopts.account, cmdopts.maxrows).then((result) => {
             console.log(JSON.stringify(result));
             process.exit(0);
         });
