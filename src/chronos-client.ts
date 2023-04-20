@@ -125,11 +125,20 @@ export class ChronosClient {
             const act = action['obj']['act'];
             let decoded_data;
             try {
-                decoded_data = Serializer.decode({abi: this.abi_cache.get(act.account.toString()),
-                                                  data: act.data,
-                                                  type: act.name.toString()});
+                const abi = this.abi_cache.get(act.account.toString());
+                if( abi !== undefined ) {
+                    const type = abi.getActionType(act.name.toString());
+                    if( type !== undefined ) {
+                        decoded_data = Serializer.decode({abi: abi,
+                                                          data: act.data,
+                                                          type: type});
+                    }
+                }
             }
             catch(err) {
+                console.error('Serializer.decode error while parsing ' +
+                              act.account.toString() + ':' + act.name.toString() +
+                              ' in transaction ' + trace['obj']['id'].toString());
                 console.error(err);
             }
 
