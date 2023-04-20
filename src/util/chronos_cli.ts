@@ -19,8 +19,7 @@ program
     .action(async (cmdopts) => {
 
         const client = get_client();
-        client.getTraceBlobByTrxID(cmdopts.id).then((blob) => {
-            const result = client.parseTraceBlob(blob);
+        client.getTraceByTrxID(cmdopts.id).then((result) => {
             console.log(JSON.stringify(result));
             process.exit(0);
         });
